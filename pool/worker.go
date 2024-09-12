@@ -1,7 +1,6 @@
 package pool
 
 import (
-	"fmt"
 	"sync"
 	"sync/atomic"
 )
@@ -18,7 +17,6 @@ func (w *Worker) Run() {
 	for {
 		select {
 		case job := <-w.pool.jobs:
-			fmt.Printf("worker %d received job\n", w.WID)
 			job()
 			atomic.AddInt64(&w.pool.jobDone, 1)
 		case <-w.done:
