@@ -55,4 +55,5 @@ func (w *Worker) stop() {
 	w.pool.lock.Lock()
 	defer w.pool.lock.Unlock()
 	delete(w.pool.workers, w.WorkerId)
+	close(w.done)
 }

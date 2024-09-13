@@ -80,6 +80,7 @@ func (p *Pool) Close() {
 	}
 
 	p.Wait()
+	close(p.jobs)
 }
 
 func (p *Pool) Wait() {
