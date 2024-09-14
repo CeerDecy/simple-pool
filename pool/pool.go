@@ -6,57 +6,54 @@ import (
 	"time"
 )
 
-type JobFunc func() any
+const DefaultWaitTime = time.Millisecond * 500
+const DefaultFreeCount = 3
+
+type TaskFunc func() any
 
 type Options struct {
 	PoolLimit       uint64
-	WorkerStopCount int
-	WorkerWaitTime  time.Duration
-}
-
-type WorkerConfig struct {
-	WorkerStopCount int
+	WorkerFreeCount int
 	WorkerWaitTime  time.Duration
 }
 
 type Pool struct {
-	limit        uint64
-	jobs         chan JobFunc
-	jobCount     int64
-	jobDone      int64
-	workers      map[string]*Worker
-	wg           *sync.WaitGroup
-	lock         *sync.Mutex
-	workerConfig WorkerConfig
+	tasks   chan TaskFunc
+	count   int64
+	done    int64
+	workers map[string]*Worker
+	wg      *sync.WaitGroup
+	lock    *sync.Mutex
+	options Options
 }
 
-func New(opt Options) *Pool {
-	if opt.WorkerWaitTime == 0 {
-		opt.WorkerWaitTime = time.Second
-	}
-	pool := &Pool{
-		limit:   opt.PoolLimit,
-		jobs:    make(chan JobFunc, opt.PoolLimit),
+func NewWithOptions(opt Options) *Pool {
+	return &Pool{
+		tasks:   make(chan TaskFunc, opt.PoolLimit),
 		workers: make(map[string]*Worker),
 		wg:      &sync.WaitGroup{},
 		lock:    &sync.Mutex{},
-		workerConfig: WorkerConfig{
-			WorkerStopCount: opt.WorkerStopCount,
-			WorkerWaitTime:  opt.WorkerWaitTime,
-		},
+		options: opt,
 	}
-	return pool
 }
 
-func (p *Pool) Submit(job JobFunc) {
-	p.jobs <- job
-	atomic.AddInt64(&p.jobCount, 1)
+func New(limit uint64) *Pool {
+	return NewWithOptions(Options{
+		PoolLimit:       limit,
+		WorkerWaitTime:  DefaultWaitTime,
+		WorkerFreeCount: DefaultFreeCount,
+	})
+}
+
+func (p *Pool) Submit(job TaskFunc) {
+	p.tasks <- job
+	atomic.AddInt64(&p.count, 1)
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	if uint64(len(p.workers)) == p.limit {
+	if uint64(len(p.workers)) == p.options.PoolLimit {
 		return
 	}
-	if len(p.jobs) < len(p.workers) {
+	if len(p.tasks) < len(p.workers)/4 {
 		return
 	}
 	p.wg.Add(1)
@@ -70,17 +67,24 @@ func (p *Pool) Submit(job JobFunc) {
 
 func (p *Pool) Close() {
 	for {
-		if atomic.LoadInt64(&p.jobCount) == atomic.LoadInt64(&p.jobDone) {
+		if atomic.LoadInt64(&p.count) == atomic.LoadInt64(&p.done) {
 			break
 		}
 		time.Sleep(10 * time.Millisecond) // 避免 busy loop
 	}
+	p.lock.Lock()
+	var workers []*Worker
 	for _, w := range p.workers {
+		workers = append(workers, w)
+	}
+	p.lock.Unlock()
+	for _, w := range workers {
 		w.done <- struct{}{}
+		close(w.done)
 	}
 
 	p.Wait()
-	close(p.jobs)
+	close(p.tasks)
 }
 
 func (p *Pool) Wait() {

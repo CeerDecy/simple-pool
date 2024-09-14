@@ -25,25 +25,27 @@ func NewWorker(pool *Pool) *Worker {
 		done:      make(chan struct{}, 1),
 		wg:        pool.wg,
 		freeCount: 0,
-		waitTime:  pool.workerConfig.WorkerWaitTime,
-		stopCount: pool.workerConfig.WorkerStopCount,
+		waitTime:  pool.options.WorkerWaitTime,
+		stopCount: pool.options.WorkerFreeCount,
 	}
 }
 
 func (w *Worker) Run() {
 	defer w.wg.Done()
+	defer w.stop()
 	for {
 		select {
-		case job := <-w.pool.jobs:
+		case job := <-w.pool.tasks:
+			if job == nil {
+				return
+			}
 			job()
-			atomic.AddInt64(&w.pool.jobDone, 1)
+			atomic.AddInt64(&w.pool.done, 1)
 		case <-w.done:
-			w.stop()
 			return
 		default:
 			if w.freeCount >= w.stopCount {
-				w.done <- struct{}{}
-				continue
+				return
 			}
 			w.freeCount++
 			time.Sleep(w.waitTime)
@@ -55,5 +57,4 @@ func (w *Worker) stop() {
 	w.pool.lock.Lock()
 	defer w.pool.lock.Unlock()
 	delete(w.pool.workers, w.WorkerId)
-	close(w.done)
 }

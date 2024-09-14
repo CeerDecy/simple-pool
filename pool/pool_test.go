@@ -11,35 +11,24 @@ import (
 func TestPool(t *testing.T) {
 	rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	pool := New(Options{
-		PoolLimit:       5000,
-		WorkerStopCount: 2,
-		WorkerWaitTime:  time.Millisecond * 500,
-	})
+	pool := New(5)
 
 	go monitor()
 
-	for i := 0; i < 30000; i++ {
+	start := time.Now()
+	for i := 0; i < 100; i++ {
 		//fmt.Println("set: ", i)
 		pool.Submit(func() any {
-			sleep := rand.Intn(10)
+			sleep := rand.Intn(3)
 			time.Sleep(time.Duration(sleep) * time.Second)
 			//fmt.Println("running job ===> ", i, sleep)
 			return nil
 		})
-		//fmt.Println("starting goroutines:", runtime.NumGoroutine())
-		if i == 15000 {
-			//fmt.Println("1010101010101010101010101010")
-			time.Sleep(10 * time.Second)
-			//fmt.Println("after sleep goroutines:", runtime.NumGoroutine())
-		}
 	}
 
 	defer func() {
-		//fmt.Println("closing goroutines:", runtime.NumGoroutine())
 		pool.Close()
-		//time.Sleep(time.Second)
-		//fmt.Println("end goroutines:", runtime.NumGoroutine())
+		fmt.Println("use time: ", time.Now().Sub(start), runtime.NumGoroutine())
 	}()
 }
 
